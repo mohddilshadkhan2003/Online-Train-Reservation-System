@@ -15,6 +15,8 @@ RailEase gives a traveler a clean reservation workflow:
 - Book a trip and generate a unique PNR
 - Review reservation details before cancellation
 - Persist data locally using SQLite
+- Browse live bookings through a searchable reservations table
+- Prevent invalid past-date bookings and incomplete submissions
 
 This project is designed as a practical Java desktop booking app with a visually friendly interface and fast local operations.
 
@@ -41,21 +43,24 @@ flowchart TD
     C -- No --> E[Access denied]
     D --> F[Book journey]
     D --> G[Cancel ticket]
-    F --> H[Generate PNR]
-    G --> I[Fetch booking by PNR]
-    H --> J[Save reservation]
-    I --> K[Cancel reservation]
+    D --> H[Search reservations]
+    F --> I[Generate PNR]
+    G --> J[Fetch booking by PNR]
+    I --> K[Save reservation]
+    J --> L[Cancel reservation]
 ```
 
 ## Features
 
 - Secure login with SQLite-backed credential validation
 - Train number lookup for automatic train name population
-- Booking form with validation for names, dates, and travel classes
+- Booking form with validation for names, dates, travel classes, and route fields
 - Unique PNR generation for each reservation
 - Reservation lookup and cancel workflow
+- Searchable live reservations overview panel
 - Automatic database creation for first-time setup
 - Local-first architecture with no cloud dependency
+- Prevents past-date ticket booking to keep the workflow reliable
 
 ## Tech stack
 
@@ -88,7 +93,8 @@ Online-Train-Reservation-System/
 3. On successful sign-in, the dashboard opens.
 4. Booking entries are validated and saved to SQLite.
 5. Reservation details are queried by PNR before cancellation.
-6. The database is created automatically on first run if it does not exist.
+6. The reservations overview tab lists all saved records with live search support.
+7. The database is created automatically on first run if it does not exist.
 
 ## Demo credentials
 
@@ -116,14 +122,6 @@ mvn clean compile exec:java
 
 ```bash
 cd /path/to/Online-Train-Reservation-System
-mvn clean compile exec:java
-```
-
-### If you want a one-time Maven setup in PowerShell
-
-```powershell
-cd "C:\path\to\Online-Train-Reservation-System"
-$env:Path = "$PWD\.tools\apache-maven-3.9.16\bin;$env:Path"
 mvn clean compile exec:java
 ```
 
@@ -163,6 +161,11 @@ A confirmation window appears with the generated PNR.
 - Review the details
 - Click `Cancel this booking`
 
+### 6. Use reservations overview
+- Open the `Reservations overview` tab
+- Search by passenger, PNR, or route keyword
+- See recent bookings in a dynamic table
+
 ## Database behavior
 
 The app creates and uses a local SQLite database named `railease.db` in the project root. It contains:
@@ -179,7 +182,9 @@ The application uses prepared statements to reduce injection risk and keep datab
 - Demo data is inserted only when content is missing
 - Input validation is enforced before booking
 - Dates are parsed using `dd-MM-yyyy` validation
+- Past-date bookings are blocked
 - Queries use `PreparedStatement` for safer execution
+- Reservation search and overview panel are available for live access
 - Reservation actions are guarded against invalid or empty values
 
 ## Future enhancements
@@ -197,8 +202,9 @@ This project is currently distributed as a learning/demo application. You may ad
 
 ## Notes
 
-This repository is intentionally simple, local, and fast to run. It is a strong starting point for a desktop train reservation system and can be extended into a more complete production-grade application.
+This repository is intentionally simple, local, and fast to run. It is a strong starting point for a desktop train reservation system and can be extended into a more complete production-grade app.
 
 ---
 
 Built for a modern, clean local booking experience.
+

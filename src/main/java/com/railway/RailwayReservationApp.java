@@ -2,6 +2,7 @@ package com.railway;
 
 import javax.swing.*;
 import javax.swing.border.*;
+import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.File;
@@ -10,6 +11,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
+import java.util.List;
 
 /**
  * Standalone Swing reservation application backed by a local SQLite database.
@@ -185,6 +187,7 @@ public final class RailwayReservationApp {
         tabs.setBackground(Color.WHITE);
         tabs.addTab("  Book a journey  ", bookingPanel());
         tabs.addTab("  Cancel booking  ", cancellationPanel());
+        tabs.addTab("  Reservations overview  ", reservationOverviewPanel());
 
         main.add(heading, BorderLayout.NORTH);
         main.add(tabs, BorderLayout.CENTER);
@@ -272,7 +275,11 @@ public final class RailwayReservationApp {
                 return;
             }
             try {
-                LocalDate.parse(d, DATE_FORMAT);
+                LocalDate journeyDate = LocalDate.parse(d, DATE_FORMAT);
+                if (journeyDate.isBefore(LocalDate.now())) {
+                    showError(frame, "Journey date cannot be in the past. Please select a valid upcoming date.");
+                    return;
+                }
             } catch (DateTimeParseException ex) {
                 showError(frame, "Use a valid date in DD-MM-YYYY format.");
                 return;
@@ -376,6 +383,69 @@ public final class RailwayReservationApp {
         });
 
         outer.add(box);
+        return outer;
+    }
+
+    private JPanel reservationOverviewPanel() {
+        JPanel outer = new JPanel(new BorderLayout(12, 12));
+        outer.setBackground(Color.WHITE);
+        outer.setBorder(new EmptyBorder(18, 18, 18, 18));
+
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        controls.setOpaque(false);
+        JLabel searchLabel = label("Search by passenger or PNR", 12, MUTED, Font.BOLD);
+        JTextField search = textField();
+        search.setPreferredSize(new Dimension(280, 38));
+        JButton refresh = secondaryButton("Refresh");
+        JButton clear = secondaryButton("Clear");
+        controls.add(searchLabel);
+        controls.add(search);
+        controls.add(refresh);
+        controls.add(clear);
+        outer.add(controls, BorderLayout.NORTH);
+
+        DefaultTableModel model = new DefaultTableModel(new Object[] {"PNR", "Passenger", "Train", "Class", "Date", "Route"}, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+
+        JTable table = new JTable(model);
+        table.setRowHeight(28);
+        table.setAutoCreateRowSorter(true);
+        table.setFillsViewportHeight(true);
+        table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+
+        JScrollPane scrollPane = new JScrollPane(table);
+        outer.add(scrollPane, BorderLayout.CENTER);
+
+        Runnable reload = () -> {
+            model.setRowCount(0);
+            try {
+                for (Booking booking : db.listBookings(search.getText().trim())) {
+                    model.addRow(new Object[] {
+                            booking.pnr,
+                            booking.passenger,
+                            booking.trainNo + " · " + booking.trainName,
+                            booking.travelClass,
+                            booking.date,
+                            booking.source + " → " + booking.destination
+                    });
+                }
+            } catch (SQLException ex) {
+                showError(frame, "Unable to load reservation list: " + ex.getMessage());
+            }
+        };
+
+        refresh.addActionListener(e -> reload.run());
+        clear.addActionListener(e -> {
+            search.setText("");
+            reload.run();
+        });
+        search.addActionListener(e -> reload.run());
+        reload.run();
+
         return outer;
     }
 
@@ -554,7 +624,7 @@ public final class RailwayReservationApp {
             try (Connection c = connect(); Statement s = c.createStatement()) {
                 s.executeUpdate("CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'USER')");
                 s.executeUpdate("CREATE TABLE IF NOT EXISTS trains (number TEXT PRIMARY KEY, name TEXT NOT NULL)");
-                s.executeUpdate("CREATE TABLE IF NOT EXISTS reservations (pnr TEXT PRIMARY KEY, passenger TEXT NOT NULL, train_no TEXT NOT NULL, train_name TEXT NOT NULL, travel_class TEXT NOT NULL, journey_date TEXT NOT NULL, source TEXT NOT NULL, destination TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+                s.executeUpdate("CREATE TABLE IF NOT EXISTS reservations (pnr TEXT PRIMARY KEY, passenger TEXT NOT NULL, train_no TEXT NOT NULL, train_name TEXT NOT NULL, travel_class TEXT NOT NULL, journey_date TEXT NOT NULL, source TEXT NOT NULL, destination TEXT NOT NULL)");
                 s.executeUpdate("CREATE INDEX IF NOT EXISTS idx_reservations_pnr ON reservations(pnr)");
                 seedDemoData(c);
             }
@@ -597,6 +667,14 @@ public final class RailwayReservationApp {
                     insertTrain.setString(1, "12627");
                     insertTrain.setString(2, "Karnataka Express");
                     insertTrain.executeUpdate();
+
+                    insertTrain.setString(1, "22435");
+                    insertTrain.setString(2, "Jabalpur Express");
+                    insertTrain.executeUpdate();
+
+                    insertTrain.setString(1, "20801");
+                    insertTrain.setString(2, "Patna Superfast");
+                    insertTrain.executeUpdate();
                 }
                 rs.close();
             }
@@ -626,6 +704,43 @@ public final class RailwayReservationApp {
             }
         }
 
+        List<Booking> listBookings(String query) throws SQLException {
+            String keyword = query == null ? "" : query.trim();
+            StringBuilder sql = new StringBuilder("SELECT * FROM reservations");
+            List<String> values = new ArrayList<>();
+            if (!keyword.isEmpty()) {
+                sql.append(" WHERE LOWER(pnr) LIKE ? OR LOWER(passenger) LIKE ? OR LOWER(train_no) LIKE ? OR LOWER(train_name) LIKE ? OR LOWER(source) LIKE ? OR LOWER(destination) LIKE ?");
+                String pattern = "%" + keyword.toLowerCase(Locale.ROOT) + "%";
+                for (int i = 0; i < 6; i++) {
+                    values.add(pattern);
+                }
+            }
+            sql.append(" ORDER BY rowid DESC");
+
+            try (Connection c = connect();
+                 PreparedStatement p = c.prepareStatement(sql.toString())) {
+                for (int i = 0; i < values.size(); i++) {
+                    p.setString(i + 1, values.get(i));
+                }
+                try (ResultSet r = p.executeQuery()) {
+                    List<Booking> bookings = new ArrayList<>();
+                    while (r.next()) {
+                        bookings.add(new Booking(
+                                r.getString("pnr"),
+                                r.getString("passenger"),
+                                r.getString("train_no"),
+                                r.getString("train_name"),
+                                r.getString("travel_class"),
+                                r.getString("journey_date"),
+                                r.getString("source"),
+                                r.getString("destination")
+                        ));
+                    }
+                    return bookings;
+                }
+            }
+        }
+
         Booking book(String passenger, String no, String name, String travelClass, String date, String source, String destination) throws SQLException {
             String cleanPassenger = passenger == null ? "" : passenger.trim();
             String cleanNo = no == null ? "" : no.trim();
@@ -637,13 +752,20 @@ public final class RailwayReservationApp {
             if (cleanPassenger.isEmpty() || cleanNo.isEmpty() || cleanName.isEmpty() || cleanDate.isEmpty() || cleanSource.isEmpty() || cleanDestination.isEmpty()) {
                 throw new SQLException("Booking fields cannot be blank.");
             }
+            if (travelClass == null || travelClass.trim().isEmpty() || travelClass.equals("Select class")) {
+                throw new SQLException("Please select a valid travel class.");
+            }
             if (!cleanNo.matches("\\d+")) {
                 throw new SQLException("Train number must contain digits only.");
             }
+            LocalDate journeyDate;
             try {
-                LocalDate.parse(cleanDate, DATE_FORMAT);
+                journeyDate = LocalDate.parse(cleanDate, DATE_FORMAT);
             } catch (DateTimeParseException ex) {
                 throw new SQLException("Date must be in DD-MM-YYYY format.");
+            }
+            if (journeyDate.isBefore(LocalDate.now())) {
+                throw new SQLException("Journey date cannot be in the past.");
             }
 
             String pnr = "RE" + System.currentTimeMillis() + String.format("%03d", new Random().nextInt(1000));
@@ -655,7 +777,7 @@ public final class RailwayReservationApp {
                     p.setString(2, cleanPassenger);
                     p.setString(3, cleanNo);
                     p.setString(4, cleanName);
-                    p.setString(5, travelClass);
+                    p.setString(5, travelClass.trim());
                     p.setString(6, cleanDate);
                     p.setString(7, cleanSource);
                     p.setString(8, cleanDestination);
@@ -666,7 +788,7 @@ public final class RailwayReservationApp {
                     throw ex;
                 }
             }
-            return new Booking(pnr, cleanPassenger, cleanNo, cleanName, travelClass, cleanDate, cleanSource, cleanDestination);
+            return new Booking(pnr, cleanPassenger, cleanNo, cleanName, travelClass.trim(), cleanDate, cleanSource, cleanDestination);
         }
 
         Booking find(String pnr) throws SQLException {
@@ -708,3 +830,5 @@ public final class RailwayReservationApp {
         }
     }
 }
+
+
