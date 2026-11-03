@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>RailEase Login</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+    <style>
+        body {
+            background: linear-gradient(135deg, #0b1f3a, #1e3a8a);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card {
+            border: none;
+            border-radius: 18px;
+            box-shadow: 0 14px 40px rgba(0,0,0,0.25);
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-5">
+            <div class="card p-4">
+                <div class="text-center mb-4">
+                    <h1 class="fw-bold text-primary">RailEase</h1>
+                    <p class="text-muted mb-0">Travel, beautifully connected.</p>
+                </div>
+
+                <div th:if="${error}" class="alert alert-danger" th:text="${error}"></div>
+
+                <form th:action="@{/login}" th:object="${loginForm}" method="post">
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control" th:field="*{username}" placeholder="Enter username" required/>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-control" th:field="*{password}" placeholder="Enter password" required/>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Sign in</button>
+                </form>
+
+                <div class="mt-4 text-center small text-muted">
+                    Demo account: <strong>admin</strong> / <strong>admin123</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
